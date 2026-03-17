@@ -7,19 +7,14 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage
 
 app = Flask(__name__)
 
-# 從環境變數讀取金鑰 (不要寫死在程式碼中)
+# 從環境變數讀取金鑰
 line_bot_api = LineBotApi(os.getenv('LINE_CHANNEL_ACCESS_TOKEN'))
 handler = WebhookHandler(os.getenv('LINE_CHANNEL_SECRET'))
 genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
 
-# 設定給家人的 Gemini 系統指令
-SYSTEM_PROMPT = """你是一個溫暖、專業且有耐心的家庭理財助理。
-群組成員包含約 60 歲的長輩，當被問到投資（如 0050、股票、理財計法）時：
-1. 請用繁體中文，語氣要親切。
-2. 避免艱澀術語，多用條列式排版。
-3. 保持客觀，結尾記得提醒「投資有風險，全家討論最保險」。"""
-
-model = genai.GenerativeModel('gemini-1.5-flash', system_instruction=SYSTEM_PROMPT)
+# 簡化版的系統指令
+model = genai.GenerativeModel('gemini-1.5-flash', 
+    system_instruction="你是一個家庭理財助理，請用繁體中文簡短回答。")
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -33,19 +28,21 @@ def callback():
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
+    # 【測試版修改】：移除關鍵字判斷，直接把訊息丟給 Gemini
     user_text = event.message.text
-    # 定義觸發關鍵字
-    keywords = ['投資', '0050', '理財', '股票', '資產', '退休金']
-    
-    if any(k in user_text for k in keywords):
-        # 呼叫 Gemini 生成回答
+    try:
         response = model.generate_content(user_text)
         line_bot_api.reply_message(
             event.reply_token,
             TextSendMessage(text=response.text)
         )
+    except Exception as e:
+        # 如果出錯，直接在 Line 回傳錯誤訊息，方便我們除錯
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=f"發生錯誤：{str(e)}")
+        )
 
 if __name__ == "__main__":
-    # Cloud Run 會提供 PORT 環境變數
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
