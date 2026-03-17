@@ -1,20 +1,20 @@
 import os
-import google.generativeai as genai
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
+# 導入最新的 Google GenAI SDK
+from google import genai
 
 app = Flask(__name__)
 
-# 從環境變數讀取金鑰
+# LINE 設定
 line_bot_api = LineBotApi(os.getenv('LINE_CHANNEL_ACCESS_TOKEN'))
 handler = WebhookHandler(os.getenv('LINE_CHANNEL_SECRET'))
-genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
 
-# 簡化版的系統指令
-model = genai.GenerativeModel('gemini-1.5-flash', 
-    system_instruction="你是一個家庭理財助理，請用繁體中文簡短回答。")
+# 初始化最新版 Gemini Client
+# 它會自動從環境變數 GOOGLE_API_KEY 讀取金鑰，不需手動配置
+client = genai.Client(api_key=os.getenv('GOOGLE_API_KEY'))
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -28,19 +28,25 @@ def callback():
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
-    # 【測試版修改】：移除關鍵字判斷，直接把訊息丟給 Gemini
     user_text = event.message.text
+    
     try:
-        response = model.generate_content(user_text)
+        # 使用最新的呼叫方式，直接指定 gemini-1.5-flash
+        response = client.models.generate_content(
+            model='gemini-1.5-flash',
+            contents=user_text,
+            config={'system_instruction': '你是一個溫暖的家庭理財助理，請用繁體中文簡短回答。'}
+        )
+        
         line_bot_api.reply_message(
             event.reply_token,
             TextSendMessage(text=response.text)
         )
     except Exception as e:
-        # 如果出錯，直接在 Line 回傳錯誤訊息，方便我們除錯
+        # 若發生錯誤，直接回傳報錯內容至 Line 方便除錯
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text=f"發生錯誤：{str(e)}")
+            TextSendMessage(text=f"系統忙碌中，請稍後再試。錯誤代碼：{str(e)}")
         )
 
 if __name__ == "__main__":
