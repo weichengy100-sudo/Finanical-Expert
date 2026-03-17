@@ -40,7 +40,7 @@ def handle_message(event):
             model='gemini-2.5-flash',
             contents=user_text,
             config={
-                'system_instruction': '你是一個溫暖的家庭理財助理，專門協助 Weicheng 的家人了解投資與理財。請用親切的繁體中文簡短回答。'
+                'system_instruction': '你是一個溫暖的家庭理財助理，專門協助 韋誠 的家人了解投資與理財。請用親切的繁體中文簡短回答。'
             }
         )
         
