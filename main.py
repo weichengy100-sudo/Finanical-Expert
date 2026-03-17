@@ -37,7 +37,7 @@ def handle_message(event):
         # model 使用 'gemini-2.0-flash' 或 'gemini-1.5-flash' 均可
         # 這裡不指定具體的小版本號（如 -001），讓 Google 自動導向最穩定版
         response = client.models.generate_content(
-            model='gemini-3.0-flash',
+            model='gemini-3.0-flash-lite-preview',
             contents=user_text,
             config={
                 'system_instruction': '你是一個溫暖的家庭理財助理，專門協助 韋誠 的家人了解投資與理財。請用親切的繁體中文簡短回答。'
