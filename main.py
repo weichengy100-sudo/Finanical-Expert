@@ -1,5 +1,7 @@
 import os
 import re
+import time
+from collections import defaultdict, deque
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
@@ -26,8 +28,48 @@ client = genai.Client(api_key=os.getenv('GOOGLE_API_KEY'))
 SYSTEM_INSTRUCTION = (
     "你是AI聊天機器人，可以回覆問題。"
     "請用像是導師、顧問的語氣回覆，保持理性、專業、且思考後再回覆，並確保對方能夠理解。"
-    "回覆請保持簡潔，盡量在 200 字以內完成。"
+    "回覆請保持簡潔，盡量在 150 字以內完成。"
 )
+
+# --- 4. 對話記憶設定 ---
+MEMORY_EXPIRE_SECONDS = 30 * 60  # 記憶保留 30 分鐘
+MAX_HISTORY_TURNS = 10            # 最多保留 10 輪對話
+
+# 觸發重置對話的關鍵字
+RESET_KEYWORDS = {"新對話", "重置", "清除記憶", "new chat", "reset"}
+
+conversation_store = defaultdict(lambda: {
+    "history": deque(maxlen=MAX_HISTORY_TURNS * 2),
+    "last_time": 0
+})
+
+def get_user_key(event):
+    """產生唯一的使用者識別 key"""
+    if event.source.type == 'user':
+        return event.source.user_id
+    elif event.source.type == 'group':
+        return f"{event.source.group_id}_{event.source.user_id}"
+    return event.source.user_id
+
+def get_history(user_key):
+    """取得有效的對話歷史，若超過時間則清除"""
+    store = conversation_store[user_key]
+    now = time.time()
+    if now - store["last_time"] > MEMORY_EXPIRE_SECONDS:
+        store["history"].clear()
+        print(f"[記憶清除] {user_key} 已超過 {MEMORY_EXPIRE_SECONDS // 60} 分鐘，重置對話")
+    return store["history"]
+
+def save_history(user_key, user_text, bot_reply):
+    """儲存這輪對話到記憶"""
+    store = conversation_store[user_key]
+    store["history"].append({"role": "user",  "parts": [{"text": user_text}]})
+    store["history"].append({"role": "model", "parts": [{"text": bot_reply}]})
+    store["last_time"] = time.time()
+
+def is_reset_command(text):
+    """判斷是否為重置指令"""
+    return text.strip().lower() in RESET_KEYWORDS
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -44,7 +86,7 @@ def handle_message(event):
     should_respond = False
     raw_text = event.message.text
 
-    # --- 4. 判斷回覆觸發條件 ---
+    # --- 5. 判斷回覆觸發條件 ---
     if event.source.type == 'user':
         should_respond = True
         clean_text = raw_text.strip()
@@ -55,6 +97,9 @@ def handle_message(event):
                     should_respond = True
                     break
 
+        if not should_respond and '@' in raw_text:
+            should_respond = True
+
         if should_respond:
             clean_text = re.sub(r'@[^\s]+\s?', '', raw_text).strip()
         else:
@@ -63,11 +108,28 @@ def handle_message(event):
     if not should_respond or not clean_text:
         return
 
+    # --- 6. 取得使用者 key ---
+    user_key = get_user_key(event)
+
+    # --- 7. 判斷是否為重置指令 ---
+    if is_reset_command(clean_text):
+        conversation_store[user_key]["history"].clear()
+        conversation_store[user_key]["last_time"] = 0
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="✨ 已開啟新對話！之前的記憶已清除，請問有什麼我可以幫你的？")
+        )
+        return
+
+    # --- 8. 取得對話記憶，組裝送給 Gemini 的內容 ---
+    history = get_history(user_key)
+    contents = list(history) + [{"role": "user", "parts": [{"text": clean_text}]}]
+
     try:
-        # --- 5. 呼叫 Gemini 產生內容 ---
+        # --- 9. 呼叫 Gemini（帶入對話歷史）---
         response = client.models.generate_content(
             model='gemini-3.1-flash-lite-preview',
-            contents=clean_text,
+            contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_INSTRUCTION,
                 temperature=0.7,
@@ -77,7 +139,10 @@ def handle_message(event):
 
         reply_text = response.text
 
-        # --- 6. 回傳訊息給 LINE ---
+        # --- 10. 儲存這輪對話到記憶 ---
+        save_history(user_key, clean_text, reply_text)
+
+        # --- 11. 回傳訊息給 LINE ---
         line_bot_api.reply_message(
             event.reply_token,
             TextSendMessage(text=reply_text)
