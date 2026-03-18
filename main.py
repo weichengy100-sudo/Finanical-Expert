@@ -68,11 +68,11 @@ def handle_message(event):
     try:
         # --- 4. 呼叫 Gemini 產生內容 ---
         response = client.models.generate_content(
-            model='gemini-3-flash-preview', 
+            model='gemini-3.1-flash-lite-preview', 
             contents=clean_text,
             config=types.GenerateContentConfig(
                 system_instruction=(
-                    "你是韋誠的AI好友，負責回覆家人親友的問題。"
+                    "你負責回覆韋誠家人親友的問題。"
                     "請保持專業、親切且具備長遠思考的特質。"
                     "若問題不明確，請溫柔地引導對方提供更多資訊。"
                 ),
