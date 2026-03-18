@@ -68,7 +68,7 @@ def handle_message(event):
     try:
         # --- 4. 呼叫 Gemini 產生內容 ---
         response = client.models.generate_content(
-            model='gemini-3.0-flash', 
+            model='gemini-3-flash-preview', 
             contents=clean_text,
             config=types.GenerateContentConfig(
                 system_instruction=(
