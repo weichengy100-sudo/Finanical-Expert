@@ -88,17 +88,16 @@ def handle_message(event):
 
     # --- 5. 判斷回覆觸發條件 ---
     if event.source.type == 'user':
+        # 私訊：直接回覆
         should_respond = True
         clean_text = raw_text.strip()
     else:
+        # 群組：只有被正確 @ 到機器人才回覆
         if hasattr(event.message, 'mention') and event.message.mention:
             for mentionee in event.message.mention.mentionees:
                 if mentionee.user_id == BOT_USER_ID:
                     should_respond = True
                     break
-
-        if not should_respond and '@' in raw_text:
-            should_respond = True
 
         if should_respond:
             clean_text = re.sub(r'@[^\s]+\s?', '', raw_text).strip()
