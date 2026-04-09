@@ -24,7 +24,7 @@ except Exception as e:
 # --- 2. 設定 Gemini 參數 ---
 client = genai.Client(api_key=os.getenv('GOOGLE_API_KEY'))
 
-# --- 3. 統一管理 System Instruction ---
+# --- 3. System Instruction ---
 SYSTEM_INSTRUCTION = (
     "你是AI聊天機器人，可以回覆問題。"
     "請用像是導師、顧問的語氣回覆，保持理性、專業、且思考後再回覆，並確保對方能夠理解。"
@@ -32,11 +32,13 @@ SYSTEM_INSTRUCTION = (
 )
 
 # --- 4. 對話記憶設定 ---
-MEMORY_EXPIRE_SECONDS = 30 * 60  # 記憶保留 30 分鐘
-MAX_HISTORY_TURNS = 10            # 最多保留 10 輪對話
-
-# 觸發重置對話的關鍵字
+MEMORY_EXPIRE_SECONDS = 30 * 60
+MAX_HISTORY_TURNS = 10
 RESET_KEYWORDS = {"新對話", "重置", "清除記憶", "new chat", "reset"}
+
+# --- 5. 機器人觸發名稱（電腦版純文字 @ 觸發用）---
+# 支援多個名稱，以防顯示名稱在不同群組不同
+BOT_TRIGGER_NAMES = ["@韋誠AI好友"]  # 可加入其他別名
 
 conversation_store = defaultdict(lambda: {
     "history": deque(maxlen=MAX_HISTORY_TURNS * 2),
@@ -71,6 +73,18 @@ def is_reset_command(text):
     """判斷是否為重置指令"""
     return text.strip().lower() in RESET_KEYWORDS
 
+def remove_bot_mentions(text):
+    """
+    清除訊息中所有機器人名稱（精確字串），
+    再用 regex 清除其他殘留 @mention 格式
+    """
+    result = text
+    for name in BOT_TRIGGER_NAMES:
+        result = result.replace(name, "")
+    # 清除手機版 mention 格式（@名稱）
+    result = re.sub(r'@\S+', '', result)
+    return result.strip()
+
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers.get('X-Line-Signature')
@@ -86,31 +100,42 @@ def handle_message(event):
     should_respond = False
     raw_text = event.message.text
 
-    # --- 5. 判斷回覆觸發條件 ---
+    # --- 6. 判斷回覆觸發條件 ---
     if event.source.type == 'user':
         # 私訊：直接回覆
         should_respond = True
         clean_text = raw_text.strip()
+
     else:
-        # 群組：只有被正確 @ 到機器人才回覆
+        # 群組：兩種觸發方式並存
+
+        # 方式 A：手機版 mention object（結構化 mention）
         if hasattr(event.message, 'mention') and event.message.mention:
             for mentionee in event.message.mention.mentionees:
                 if mentionee.user_id == BOT_USER_ID:
                     should_respond = True
                     break
 
+        # 方式 B：電腦版純文字 @名稱（不產生 mention object）
+        if not should_respond:
+            raw_lower = raw_text.lower()
+            for name in BOT_TRIGGER_NAMES:
+                if name.lower() in raw_lower:
+                    should_respond = True
+                    break
+
         if should_respond:
-            clean_text = re.sub(r'@[^\s]+\s?', '', raw_text).strip()
+            clean_text = remove_bot_mentions(raw_text)
         else:
             clean_text = ""
 
     if not should_respond or not clean_text:
         return
 
-    # --- 6. 取得使用者 key ---
+    # --- 7. 取得使用者 key ---
     user_key = get_user_key(event)
 
-    # --- 7. 判斷是否為重置指令 ---
+    # --- 8. 判斷是否為重置指令 ---
     if is_reset_command(clean_text):
         conversation_store[user_key]["history"].clear()
         conversation_store[user_key]["last_time"] = 0
@@ -120,28 +145,28 @@ def handle_message(event):
         )
         return
 
-    # --- 8. 取得對話記憶，組裝送給 Gemini 的內容 ---
+    # --- 9. 取得對話記憶，組裝送給 Gemini 的內容 ---
     history = get_history(user_key)
     contents = list(history) + [{"role": "user", "parts": [{"text": clean_text}]}]
 
     try:
-        # --- 9. 呼叫 Gemini（帶入對話歷史）---
+        # --- 10. 呼叫 Gemini（帶入對話歷史）---
         response = client.models.generate_content(
-            model='gemini-3.1-flash-lite-preview',
+            model='gemini-3.1-flash-lite-preview',  
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_INSTRUCTION,
                 temperature=0.7,
-                max_output_tokens=300,  # 約 150~200 個中文字
+                max_output_tokens=300,
             )
         )
 
         reply_text = response.text
 
-        # --- 10. 儲存這輪對話到記憶 ---
+        # --- 11. 儲存這輪對話到記憶 ---
         save_history(user_key, clean_text, reply_text)
 
-        # --- 11. 回傳訊息給 LINE ---
+        # --- 12. 回傳訊息給 LINE ---
         line_bot_api.reply_message(
             event.reply_token,
             TextSendMessage(text=reply_text)
