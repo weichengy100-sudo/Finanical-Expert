@@ -35,7 +35,7 @@ SYSTEM_INSTRUCTION = (
 
 # --- 4. 對話記憶設定 ---
 MEMORY_EXPIRE_SECONDS = 30 * 60
-MAX_HISTORY_TURNS = 10
+MAX_HISTORY_TURNS = 5
 RESET_KEYWORDS = {"新對話", "重置", "清除記憶", "new chat", "reset"}
 
 # --- 5. 機器人觸發名稱（電腦版純文字 @ 觸發用）---
