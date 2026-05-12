@@ -23,7 +23,9 @@ except Exception as e:
 
 # --- 2. 設定 Gemini 參數 ---
 client = genai.Client(api_key=os.getenv('GOOGLE_API_KEY'))
-
+google_search_tool = types.Tool(
+    google_search=types.GoogleSearch()
+)
 # --- 3. System Instruction ---
 SYSTEM_INSTRUCTION = (
     "你是AI聊天機器人，可以回覆問題。"
@@ -158,6 +160,7 @@ def handle_message(event):
                 system_instruction=SYSTEM_INSTRUCTION,
                 temperature=0.7,
                 max_output_tokens=300,
+                tools=[google_search_tool]
             )
         )
 
