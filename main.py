@@ -160,7 +160,7 @@ def handle_message(event):
                 system_instruction=SYSTEM_INSTRUCTION,
                 temperature=0.7,
                 max_output_tokens=300,
-                tools=[google_search_tool]
+                #tools=[google_search_tool]
             )
         )
 
